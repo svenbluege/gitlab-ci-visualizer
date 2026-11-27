@@ -1,10 +1,12 @@
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+
 plugins {
     kotlin("jvm") version "2.4.21"
     id("org.jetbrains.intellij.platform") version "2.20.1"
 }
 
 group = "io.github.svenbluege"
-version = "0.1.0"
+version = "0.2.0"
 
 // IntelliJ Platform 2026.2 is compiled for Java 25.
 kotlin { jvmToolchain(25) }
@@ -20,6 +22,7 @@ dependencies {
         val localIde = providers.gradleProperty("localIdePath")
         if (localIde.isPresent) local(localIde.get()) else webstorm("2026.2.1")
         bundledPlugin("com.intellij.modules.jcef") // the embedded browser is a separate bundled plugin since 2026.2
+        testFramework(TestFrameworkType.Platform) // for PipelineEditorTest, which starts a headless IDE
     }
     // Bundled on purpose: the IDE's own SnakeYAML is a platform-internal module, not visible to plugins.
     implementation("org.yaml:snakeyaml:2.4")

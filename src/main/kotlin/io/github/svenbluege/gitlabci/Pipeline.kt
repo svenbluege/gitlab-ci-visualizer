@@ -25,6 +25,8 @@ class JobResult(
     val dependencies: List<String>,
     val problems: MutableList<String>,
     val config: Config,
+    /** The local include that defines the job, null for the file itself. */
+    val source: String? = null,
 )
 
 class PipelineResult(
@@ -33,10 +35,16 @@ class PipelineResult(
     /** Set when `workflow:rules` prevent the pipeline. */
     val blocked: String?,
     val notes: List<String>,
+    /** The variables the rules were evaluated with, without job-level ones. */
+    val variables: Map<String, String> = emptyMap(),
 )
 
 /** A parsed `.gitlab-ci.yml` with includes, `!reference` tags and `extends` resolved. */
-class Pipeline private constructor(private val config: Config, private val notes: MutableList<String>) {
+class Pipeline private constructor(
+    private val config: Config,
+    private val notes: MutableList<String>,
+    private val sources: Map<String, String>,
+) {
 
     private val jobs: Map<String, Config> = config
         .filter { (name, value) -> name !in RESERVED && !name.startsWith(".") && value is Map<*, *> }
@@ -93,7 +101,7 @@ class Pipeline private constructor(private val config: Config, private val notes
                 }
             }
         }
-        return PipelineResult(stages, results, blocked, notes)
+        return PipelineResult(stages, results, blocked, notes, variables + overrides)
     }
 
     private fun evaluate(
@@ -130,7 +138,7 @@ class Pipeline private constructor(private val config: Config, private val notes
         return JobResult(
             name, stage, runs && !blocked, whenValue,
             if (blocked) "no pipeline is created (workflow rules)" else reason,
-            needs?.let(::needsOf), flatten(job["dependencies"]).map { it.toString() }, problems, job,
+            needs?.let(::needsOf), flatten(job["dependencies"]).map { it.toString() }, problems, job, sources[name],
         )
     }
 
@@ -148,22 +156,28 @@ class Pipeline private constructor(private val config: Config, private val notes
         /** [readInclude] returns the text of a local include (path relative to the repository root), or null. */
         fun load(text: String, readInclude: (String) -> String? = { null }): Pipeline {
             val notes = mutableListOf<String>()
-            val merged = withIncludes(text, readInclude, notes, 0)
+            val sources = mutableMapOf<String, String>()
+            val merged = withIncludes(text, null, readInclude, notes, sources, 0)
             // Same order as GitLab: includes, then !reference, then extends.
             @Suppress("UNCHECKED_CAST")
-            return Pipeline(resolveReferences(merged, merged, 0) as Config, notes)
+            return Pipeline(resolveReferences(merged, merged, 0) as Config, notes, sources)
         }
 
         // shortcut: only `include: local` without wildcards is read, upgrade when project/remote/template includes matter.
-        private fun withIncludes(text: String, readInclude: (String) -> String?, notes: MutableList<String>, depth: Int): Config {
+        private fun withIncludes(
+            text: String, file: String?, readInclude: (String) -> String?,
+            notes: MutableList<String>, sources: MutableMap<String, String>, depth: Int,
+        ): Config {
             val config = parseYaml(text)
             var merged: Config = emptyMap()
             for (include in flatten(config["include"])) {
-                val path = include as? String ?: (include as? Map<*, *>)?.get("local") as? String
-                val included = path?.takeIf { depth < 10 }?.let { readInclude(it.removePrefix("/")) }
+                val path = (include as? String ?: (include as? Map<*, *>)?.get("local") as? String)?.removePrefix("/")
+                val included = path?.takeIf { depth < 10 }?.let(readInclude)
                 if (included == null) notes += "Include not resolved, its jobs are missing: $include"
-                else merged = deepMerge(merged, withIncludes(included, readInclude, notes, depth + 1))
+                else merged = deepMerge(merged, withIncludes(included, path, readInclude, notes, sources, depth + 1))
             }
+            // The including file wins the merge, so it is also where a redefined job is found.
+            for (key in config.keys) if (file != null) sources[key] = file else sources.remove(key)
             return deepMerge(merged, config - "include")
         }
 
@@ -304,3 +318,10 @@ fun parallelCount(parallel: Any?): Int = when (parallel) {
     }
     else -> 1
 }
+
+/** Whether a file gets the pipeline view. Included fragments have other names and stay plain YAML. */
+fun isPipelineFile(name: String): Boolean = name.endsWith(".gitlab-ci.yml") || name.endsWith(".gitlab-ci.yaml")
+
+/** Offset of the top-level key that defines [job] in [text], or null. */
+fun definitionOffset(text: String, job: String): Int? =
+    Regex("""^(["']?)${Regex.escape(job)}\1\s*:""", RegexOption.MULTILINE).find(text)?.range?.first
