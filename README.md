@@ -1,23 +1,56 @@
-# GitLab CI Visualizer
+# GitLab CI Visualizer – GitLab pipeline visualization for JetBrains IDEs
 
-A plugin for JetBrains IDEs that shows a `.gitlab-ci.yml` as a pipeline graph next to the editor and lets you
-simulate which jobs run.
+**Visualize your GitLab CI/CD pipeline right in the IDE.** GitLab CI Visualizer is a plugin for JetBrains IDEs
+such as WebStorm, IntelliJ IDEA, PyCharm, PhpStorm and GoLand. It shows a `.gitlab-ci.yml` as a pipeline graph
+next to the editor, with stages, jobs and their `needs` dependencies, and it simulates which jobs run for a
+branch, a tag or a merge request before you push.
 
-![The pipeline graph next to a .gitlab-ci.yml in WebStorm](docs/screenshot.png)
+![GitLab pipeline visualization in WebStorm: the .gitlab-ci.yml on the left; on the right the pipeline graph with stages, jobs and needs arrows, and the details of the selected job](docs/screenshot.png)
 
-## What it does
+It works like the *Visualize* tab of GitLab's pipeline editor, but locally, while you type, without a connection
+to GitLab, and with a simulation of your `rules`.
 
-- **Pipeline view**: one lane per stage, one card per job, updated while you type. Each job shows its state with
-  an icon and a color: runs, manual, delayed, skipped, or has a problem.
-- **Dependencies**: `needs` are solid arrows, `dependencies` dashed ones. Select or hover a job to highlight
-  everything it waits for and everything waiting for it.
-- **Simulation**: choose the pipeline source, branch, tag, default branch and extra variables. The graph shows
-  which jobs that pipeline would contain. `workflow:rules` that prevent the pipeline and `needs` that cannot be
-  met are reported.
-- **Details**: select a job to see why it runs or is skipped (the rule that decided it), what it needs, what
-  needs it, and where it is defined. *Go to definition* jumps to the job in the editor, also into local includes.
+## Features
+
+- **Pipeline graph for `.gitlab-ci.yml`**: one lane per stage, one card per job, updated while you type. Each job
+  shows its state with an icon and a color: runs, manual, delayed, skipped, or has a problem.
+- **Job dependency graph**: `needs` are solid arrows, `dependencies` dashed ones. Select or hover a job to
+  highlight everything it waits for and everything waiting for it.
+- **Pipeline simulation**: choose the pipeline source, branch, tag, default branch and extra CI/CD variables. The
+  graph shows which jobs that pipeline would contain. `workflow:rules` that prevent the pipeline and `needs` that
+  cannot be met are reported.
+- **Why a job runs or is skipped**: select a job to see the rule that decided it, what it needs, what needs it,
+  and where it is defined. *Go to definition* jumps to the job in the editor, also into local includes.
+- **Understands your configuration**: `extends`, `!reference`, local `include`, `rules`, `only`/`except`,
+  `workflow`, `parallel` and `trigger` are resolved before drawing.
 - **Keyboard and screen readers**: arrow keys move between jobs, `Enter` opens the definition, `Esc` clears the
   selection. States are never shown by color alone, and the colors are tested for contrast in both themes.
+
+## Questions it answers
+
+**How can I visualize a `.gitlab-ci.yml` file?**
+Open it in the IDE. The editor splits, and the pipeline appears as a graph next to the YAML.
+
+**Which jobs run for my branch, tag or merge request?**
+Set the source, branch or tag in the toolbar above the graph. Jobs that would not be in that pipeline are shown
+as skipped.
+
+**Why is my GitLab CI job not running?**
+Select the job. The details name the `rules`, `only`/`except` or `workflow` rule that excluded it.
+
+**Which jobs does a job depend on?**
+Select it. The chain of `needs` before and after it is highlighted, and the details list *Needs* and *Needed by*.
+
+**Does it need access to my GitLab server?**
+No. It reads the files in your project, nothing else.
+
+## Deutsch: GitLab-Pipeline-Visualisierung in der IDE
+
+GitLab CI Visualizer ist ein Plugin für JetBrains-IDEs (WebStorm, IntelliJ IDEA, PyCharm, PhpStorm, GoLand), das
+eine GitLab-CI/CD-Pipeline direkt neben der `.gitlab-ci.yml` als Graph darstellt: Stages, Jobs und ihre
+Abhängigkeiten (`needs`). Die Pipeline lässt sich für einen Branch, einen Tag oder einen Merge Request simulieren,
+sodass man vor dem Push sieht, welche Jobs laufen und welche Regel einen Job überspringt. Die Installation ist
+unten beschrieben; die Oberfläche des Plugins ist englisch.
 
 ## Installation
 
@@ -26,7 +59,8 @@ the IDE finds new versions by itself.
 
 ### Requirements
 
-- A JetBrains IDE **2026.2 or newer**. It is built and tested with WebStorm 2026.2.1.
+- A JetBrains IDE **2026.2 or newer**. The plugin is built and tested with WebStorm 2026.2.1. It uses only the
+  common IntelliJ Platform, so it should run in the other JetBrains IDEs of that version as well.
 - The bundled plugin **Web Browser (JCEF)** must be enabled, which it is by default.
 
 ### 1. Download the plugin file
@@ -79,7 +113,7 @@ Open **Settings → Plugins → Installed**, select *GitLab CI Visualizer* and c
   under **Settings → Plugins → Installed** and restart.
 - **“Plugin is incompatible”**: the IDE is older than 2026.2.
 
-## What is evaluated
+## Supported GitLab CI keywords
 
 `stages`, `extends`, `!reference`, `include: local`, `rules` (`if`, `when`, `needs`), `only`/`except` (refs and
 variables), `workflow:rules`, `needs`, `dependencies`, `when`, `parallel`, `trigger`.
