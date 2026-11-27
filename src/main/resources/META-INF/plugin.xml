@@ -1,0 +1,19 @@
+<idea-plugin>
+    <id>io.github.svenbluege.gitlab-ci-visualizer</id>
+    <name>GitLab CI Visualizer</name>
+    <vendor>Sven Bluege</vendor>
+    <description><![CDATA[
+        Shows a <code>.gitlab-ci.yml</code> file as a pipeline graph next to the editor: stages, jobs and their
+        <code>needs</code> dependencies. Simulate a pipeline (source, branch, tag, variables) to see which jobs run.
+    ]]></description>
+    <depends>com.intellij.modules.platform</depends>
+    <!-- The embedded browser that draws the graph; declared the same way as the bundled Markdown plugin does. -->
+    <dependencies>
+        <plugin id="com.intellij.modules.jcef"/>
+        <module name="intellij.libraries.jcef"/>
+        <module name="intellij.platform.ui.jcef"/>
+    </dependencies>
+    <extensions defaultExtensionNs="com.intellij">
+        <fileEditorProvider implementation="io.github.svenbluege.gitlabci.PipelineEditorProvider"/>
+    </extensions>
+</idea-plugin>
