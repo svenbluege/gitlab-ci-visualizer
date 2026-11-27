@@ -59,7 +59,73 @@ class RendererTest {
         assertEquals(listOf("1/2", "2/2", "5/5"), texts("count"))
         assertTrue("""aria-label="Stage build: 1 of 2 jobs run"""" in html)
         assertEquals(listOf(0, 0, 1, 1, 2, 2, 2, 2, 2), cards(html).map { it.column }.sorted())
-        assertEquals(listOf("docs", "staging", "production", "later", "downstream"), cards(html).filter { it.column == 2 }.sortedBy { it.row }.map { it.name })
+        // within a stage by name, as GitLab orders them, not in file order
+        assertEquals(listOf("docs", "downstream", "later", "production", "staging"), cards(html).filter { it.column == 2 }.sortedBy { it.row }.map { it.name })
+        assertEquals(listOf("broken", "unit"), cards(html).filter { it.column == 1 }.sortedBy { it.row }.map { it.name })
+    }
+
+    @Test
+    fun `job names are ordered like GitLab orders them`() {
+        val names = listOf("test 10", "test 2", "build", "Build", "a-1", "a", "test", "job 2 b", "job 2 a")
+        assertEquals(listOf("Build", "a", "a-1", "build", "job 2 a", "job 2 b", "test", "test 2", "test 10"), names.sortedWith(::gitLabOrder))
+        assertEquals(0, gitLabOrder("same 1", "same 1"))
+    }
+
+    /** GitLab's "Group jobs by: Job dependencies". */
+    @Test
+    fun `grouped by dependencies a job sits right of everything it waits for`() {
+        val chain = pipeline($$"""
+            stages: [check, build, test]
+            unit: { stage: check, script: x }
+            lint: { stage: check, script: x }
+            app: { stage: build, script: x }
+            docs: { stage: build, needs: [], script: x }
+            nightly: { stage: build, needs: [lint], rules: [{ if: $NEVER }], script: x }
+            upload-ios: { stage: test, needs: [app], script: x }
+            upload: { stage: test, needs: [app], script: x }
+            run: { stage: test, needs: [upload], script: x }
+            run-ios: { stage: test, needs: [upload-ios, run], script: x }
+            report: { stage: test, script: x }
+            late: { stage: test, needs: [{ job: nightly, optional: true }], script: x }
+        """).run()
+        fun columns(html: String) = cards(html).groupBy { it.column }.toSortedMap().values.map { column -> column.sortedBy { it.row }.map { it.name } }
+
+        val running = Renderer.graph(chain, showSkipped = false, byDependencies = true)
+        assertEquals(
+            listOf(
+                listOf("lint", "unit", "docs", "late"), // nothing to wait for: no earlier stage, `needs: []`, or the needed job is absent
+                listOf("app"),                          // no needs: waits for the stage before
+                listOf("report", "upload", "upload-ios"),
+                listOf("run"),
+                listOf("run-ios"),
+            ),
+            columns(running),
+        )
+        assertEquals(listOf("check · build · test", "build", "test", "test", "test"), texts("stage", running))
+        assertTrue("""aria-label="Dependency level 3, stage test: 3 of 3 jobs run"""" in running)
+        assertTrue("Pipeline graph: 10 jobs in 5 dependency levels." in running)
+
+        // Shown skipped jobs take part: "late" now waits for "nightly", so every line still points to a later column.
+        val all = Renderer.graph(chain, showSkipped = true, byDependencies = true)
+        assertEquals(
+            listOf(listOf("lint", "unit", "docs"), listOf("app", "nightly"), listOf("late", "report", "upload", "upload-ios"), listOf("run"), listOf("run-ios")),
+            columns(all),
+        )
+        val lines = Regex("""data-from="([^"]*)" data-to="([^"]*)"""").findAll(all).toList()
+        assertEquals(7, lines.size)
+        assertTrue(lines.all { card(it.groupValues[1], all).column < card(it.groupValues[2], all).column })
+
+        // By stage the same pipeline has three columns.
+        assertEquals(listOf("check", "build", "test"), texts("stage", Renderer.graph(chain, showSkipped = false)))
+    }
+
+    @Test
+    fun `jobs that need each other in a circle still get a place`() {
+        val circle = pipeline("""
+            a: { needs: [b], script: x }
+            b: { needs: [a], script: x }
+        """).run()
+        assertEquals(2, cards(Renderer.graph(circle, showSkipped = true, byDependencies = true)).size)
     }
 
     @Test
@@ -77,8 +143,8 @@ class RendererTest {
 
     @Test
     fun `badges name what the icon cannot show`() {
-        // in reading order: build, test, deploy
-        assertEquals(listOf("", "", "×3", "", "", "", "manual", "delayed", "trigger"), texts("badge"))
+        // in reading order: compile, lint | broken, unit | docs, downstream, later, production, staging
+        assertEquals(listOf("", "", "", "×3", "", "trigger", "delayed", "manual", ""), texts("badge"))
     }
 
     @Test
@@ -343,7 +409,10 @@ class RendererTest {
         assertTrue("classList.toggle('no-open', !window.openJob)" in Renderer.page(html, style))
     }
 
-    /** Renders a real file without an IDE: set GITLAB_CI_FILE (and optionally GITLAB_CI_OUT, GITLAB_CI_BRANCH, GITLAB_CI_THEME). */
+    /**
+     * Renders a real file without an IDE: set GITLAB_CI_FILE, and optionally GITLAB_CI_OUT, GITLAB_CI_BRANCH,
+     * GITLAB_CI_THEME=light, GITLAB_CI_GROUP=dependencies and GITLAB_CI_SKIPPED=hide.
+     */
     @Test
     fun `renders the file from the environment`() {
         val path = System.getenv("GITLAB_CI_FILE")
@@ -352,7 +421,8 @@ class RendererTest {
         val root = generateSequence(file.parentFile) { it.parentFile }.firstOrNull { File(it, ".git").exists() } ?: file.parentFile
         val simulated = Pipeline.load(file.readText()) { File(root, it).takeIf(File::isFile)?.readText() }
             .simulate(predefinedVariables("push", System.getenv("GITLAB_CI_BRANCH") ?: "main", "", "main"))
-        val page = Renderer.render(simulated, Renderer.Style(dark = System.getenv("GITLAB_CI_THEME") != "light"), showSkipped = true)
+        val graph = Renderer.graph(simulated, System.getenv("GITLAB_CI_SKIPPED") != "hide", System.getenv("GITLAB_CI_GROUP") == "dependencies")
+        val page = Renderer.page(graph, Renderer.Style(dark = System.getenv("GITLAB_CI_THEME") != "light"))
         File(System.getenv("GITLAB_CI_OUT") ?: "build/pipeline.html").writeText(page)
         println("${simulated.jobs.count { it.included }} of ${simulated.jobs.size} jobs, notes: ${simulated.notes}")
     }

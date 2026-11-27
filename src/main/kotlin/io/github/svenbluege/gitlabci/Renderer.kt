@@ -35,21 +35,30 @@ object Renderer {
     private const val MAX_NAME = 48
 
     private class Box(val x: Int, val y: Int, val width: Int)
+    private class Column(val title: String, val label: String, val jobs: List<JobResult>)
 
     fun render(result: PipelineResult, style: Style, showSkipped: Boolean, bridge: String = ""): String =
         page(graph(result, showSkipped), style, bridge)
 
-    /** The page content for a pipeline; wrap it with [page]. */
-    fun graph(result: PipelineResult, showSkipped: Boolean): String {
+    /**
+     * The page content for a pipeline; wrap it with [page]. Columns are stages, or with [byDependencies] the levels
+     * of GitLab's "Job dependencies" view. Within a column jobs are ordered by name, as GitLab orders them.
+     */
+    fun graph(result: PipelineResult, showSkipped: Boolean, byDependencies: Boolean = false): String {
         val jobs = result.jobs.filter { showSkipped || it.included }
-        val columns = result.stages.map { stage -> stage to jobs.filter { it.stage == stage } }.filter { it.second.isNotEmpty() }
-        val rows = columns.maxOfOrNull { it.second.size } ?: 0
+        val columns = if (byDependencies) levels(result, jobs) else result.stages.mapNotNull { stage ->
+            jobs.filter { it.stage == stage }.sortedWith { a, b -> gitLabOrder(a.name, b.name) }
+                .takeIf { it.isNotEmpty() }?.let { Column(stage, "Stage $stage", it) }
+        }
+        val rows = columns.maxOfOrNull { it.jobs.size } ?: 0
         val laneHeight = HEADER + rows * ROW - (ROW - CARD) + LANE_PAD
         val boxes = HashMap<String, Box>()
         val lanes = StringBuilder()
         val cards = StringBuilder()
         var x = PAD
-        columns.forEachIndexed { column, (stage, stageJobs) ->
+        columns.forEachIndexed { column, lane ->
+            val stage = lane.title
+            val stageJobs = lane.jobs
             val longest = stageJobs.maxOf { label(it).length + badge(it).let { badge -> if (badge.isEmpty()) 0 else badge.length + 2 } }
             val content = maxOf(((stage.length + 6) * CHAR).toInt(), (longest * CHAR).toInt() + 44)
             val width = content + 2 * LANE_PAD
@@ -57,7 +66,7 @@ object Renderer {
             lanes.append("""<rect class="lane" x="$x" y="$PAD" width="$width" height="$laneHeight" rx="10"/>""")
             lanes.append("""<text class="stage" x="${x + LANE_PAD + 2}" y="${PAD + 21}">${esc(stage)}</text>""")
             lanes.append("""<text class="count" x="${x + width - LANE_PAD - 2}" y="${PAD + 21}" text-anchor="end">$running/${stageJobs.size}</text>""")
-            cards.append("""<g role="group" aria-label="${esc("Stage $stage: $running of ${stageJobs.size} jobs run")}">""")
+            cards.append("""<g role="group" aria-label="${esc("${lane.label}: $running of ${stageJobs.size} jobs run")}">""")
             stageJobs.forEachIndexed { row, job ->
                 val box = Box(x + LANE_PAD, PAD + HEADER + row * ROW, content).also { boxes[job.name] = it }
                 // The tab stop starts on the top left card, the first one in reading order.
@@ -102,7 +111,7 @@ object Renderer {
                 html.append("""<p class="empty">No job runs in this simulation. Turn on “Show skipped jobs” to see all ${result.jobs.size} jobs.</p>""")
             else -> {
                 // The last lane keeps room on its right: lines between its jobs loop around that side.
-                val label = "Pipeline graph: ${jobs.size} jobs in ${columns.size} stages. " +
+                val label = "Pipeline graph: ${jobs.size} jobs in ${columns.size} ${if (byDependencies) "dependency levels" else "stages"}. " +
                     "Arrow keys move between jobs, Enter opens the job definition, Escape clears the selection."
                 html.append("""<svg class="graph" width="${x - GAP + PAD + 28}" height="${PAD + laneHeight + PAD}" role="group" aria-label="$label">""")
                 html.append("""<g aria-hidden="true">$lanes</g><g class="edges" aria-hidden="true">$edges</g>$cards<g class="above" aria-hidden="true"></g></svg>""")
@@ -119,6 +128,28 @@ object Renderer {
         val neededBy = result.jobs.flatMap { job -> job.needs.orEmpty().map { it.job to job.name } }.groupBy({ it.first }, { it.second })
         jobs.forEachIndexed { index, job -> html.append(details(job, "j$index", all, boxes.keys, neededBy[job.name].orEmpty())) }
         return html.append("</aside>").toString()
+    }
+
+    /**
+     * GitLab's "Job dependencies" view: a job sits one column right of the last job it waits for, and without `needs`
+     * it waits for the jobs of the previous stage. Only the shown jobs count, so with skipped jobs hidden the columns
+     * are GitLab's, and with skipped jobs shown every line still points to the right.
+     */
+    private fun levels(result: PipelineResult, jobs: List<JobResult>): List<Column> {
+        val byName = jobs.associateBy { it.name }
+        val level = HashMap<String, Int>()
+        fun levelOf(job: JobResult, path: Set<String>): Int = level.getOrPut(job.name) {
+            val before = job.needs?.mapNotNull { byName[it.job] }
+                ?: result.stages.take(result.stages.indexOf(job.stage)).asReversed()
+                    .firstNotNullOfOrNull { stage -> jobs.filter { it.stage == stage }.ifEmpty { null } }.orEmpty()
+            // The path guards against jobs that need each other in a circle.
+            before.filter { it.name !in path }.maxOfOrNull { levelOf(it, path + job.name) + 1 } ?: 0
+        }
+        return jobs.groupBy { levelOf(it, emptySet()) }.toSortedMap().values.mapIndexed { index, column ->
+            val sorted = column.sortedWith(compareBy<JobResult> { result.stages.indexOf(it.stage) }.thenComparing { a, b -> gitLabOrder(a.name, b.name) })
+            val stages = sorted.map { it.stage }.distinct().joinToString(" · ")
+            Column(stages, "Dependency level ${index + 1}, stage $stages", sorted)
+        }
     }
 
     /** A message instead of the graph, e.g. for invalid YAML. [stale] is the last graph, kept visible while typing. */
@@ -425,4 +456,17 @@ object Renderer {
           scroller.addEventListener('scroll', () => { state.x = scroller.scrollLeft; state.y = scroller.scrollTop; save(); });
         }
     """.trimIndent()
+}
+
+/** GitLab's order of job names: text by character, numbers by value, so `test 2` comes before `test 10`. */
+fun gitLabOrder(a: String, b: String): Int {
+    val chunks = Regex("""\d+|\D+""")
+    val left = chunks.findAll(a).map { it.value }.toList()
+    val right = chunks.findAll(b).map { it.value }.toList()
+    for (index in 0 until minOf(left.size, right.size)) {
+        val (x, y) = left[index] to right[index]
+        val order = if (x[0].isDigit() && y[0].isDigit()) x.toBigInteger().compareTo(y.toBigInteger()) else x.compareTo(y)
+        if (order != 0) return order
+    }
+    return left.size - right.size
 }

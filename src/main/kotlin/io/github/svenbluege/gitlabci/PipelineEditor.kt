@@ -74,6 +74,8 @@ private class PipelinePreview(private val project: Project, private val file: Vi
     private val defaultBranch = JBTextField(settings.getValue("$KEY.defaultBranch", "main"), 8)
     private val variables = JBTextField(settings.getValue("$KEY.variables", ""), 26)
         .apply { emptyText.text = "KEY=value OTHER=\"with spaces\"" }
+    private val grouping = ComboBox(arrayOf("Stage", "Job dependencies"))
+        .apply { item = settings.getValue("$KEY.grouping", "Stage") }
     private val changesMatch = JBCheckBox("changes/exists rules match", settings.getBoolean("$KEY.changesMatch", true))
     private val showSkipped = JBCheckBox("Show skipped jobs", settings.getBoolean("$KEY.showSkipped", true))
 
@@ -109,6 +111,7 @@ private class PipelinePreview(private val project: Project, private val file: Vi
         add("Tag:", tag, "CI_COMMIT_TAG. A tag pipeline has no branch")
         add("Default branch:", defaultBranch, "CI_DEFAULT_BRANCH, also used as the target branch of a merge request")
         add("Variables:", variables, "Extra variables, as given when running a pipeline by hand. They override variables from the file")
+        add("Group by:", grouping, "As GitLab's \"Group jobs by\": one column per stage, or columns by what each job waits for")
         changesMatch.toolTipText = "changes and exists cannot be checked here. Selected: rules that use them count as matching"
         showSkipped.toolTipText = "Also show the jobs that are not part of the simulated pipeline"
         toolbar.add(changesMatch)
@@ -133,6 +136,7 @@ private class PipelinePreview(private val project: Project, private val file: Vi
             })
         }
         source.addActionListener { scheduleUpdate() }
+        grouping.addActionListener { scheduleUpdate() }
         for (box in listOf(changesMatch, showSkipped)) box.addActionListener { scheduleUpdate() }
         FileDocumentManager.getInstance().getDocument(file)?.addDocumentListener(object : DocumentListener {
             override fun documentChanged(event: DocumentEvent) = scheduleUpdate()
@@ -155,12 +159,14 @@ private class PipelinePreview(private val project: Project, private val file: Vi
         settings.setValue("$KEY.tag", tag.text)
         settings.setValue("$KEY.defaultBranch", defaultBranch.text)
         settings.setValue("$KEY.variables", variables.text)
+        settings.setValue("$KEY.grouping", grouping.item)
         settings.setValue("$KEY.changesMatch", changesMatch.isSelected, true)
         settings.setValue("$KEY.showSkipped", showSkipped.isSelected, true)
         val predefined = predefinedVariables(source.item, branch.text.trim(), tag.text.trim(), defaultBranch.text.trim())
         val overrides = parseVariables(variables.text)
         val changes = changesMatch.isSelected
         val skipped = showSkipped.isSelected
+        val byDependencies = grouping.selectedIndex == 1
         ReadAction.nonBlocking(Callable {
             try {
                 val documents = FileDocumentManager.getInstance()
@@ -178,7 +184,7 @@ private class PipelinePreview(private val project: Project, private val file: Vi
                 val targets = result.jobs.mapNotNull { job ->
                     texts[job.source]?.let { (target, content) -> job.name to (target to (definitionOffset(content, job.name) ?: 0)) }
                 }.toMap()
-                Rendered(Renderer.graph(result, skipped), "", targets)
+                Rendered(Renderer.graph(result, skipped, byDependencies), "", targets)
             } catch (e: Exception) { // invalid YAML while typing is the normal case here
                 if (e is ControlFlowException) throw e
                 Rendered(null, e.message ?: e.toString(), emptyMap())

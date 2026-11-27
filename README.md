@@ -14,6 +14,8 @@ to GitLab, and with a simulation of your `rules`.
 
 - **Pipeline graph for `.gitlab-ci.yml`**: one lane per stage, one card per job, updated while you type. Each job
   shows its state with an icon and a color: runs, manual, delayed, skipped, or has a problem.
+- **The same two views as GitLab**: group the jobs by stage or by job dependencies, as on GitLab's pipeline page.
+  Jobs are ordered within a column the way GitLab orders them.
 - **Job dependency graph**: `needs` are solid arrows, `dependencies` dashed ones. Select or hover a job to
   highlight everything it waits for and everything waiting for it.
 - **Pipeline simulation**: choose the pipeline source, branch, tag, default branch and extra CI/CD variables. The
@@ -87,10 +89,14 @@ both, and pipeline only.
 | Tag | `CI_COMMIT_TAG` | A tag turns it into a tag pipeline, which has no branch |
 | Default branch | `CI_DEFAULT_BRANCH` | Also the target branch of a merge request |
 | Variables | any | Extra variables, e.g. `DEPLOY_ENV=prod NOTE="two words"`. They override the file |
+| Group by | – | *Stage*: one column per stage. *Job dependencies*: a job sits right of everything it waits for |
 | changes/exists rules match | – | `changes` and `exists` cannot be checked; this decides whether such rules match |
 | Show skipped jobs | – | Also show jobs that are not part of the simulated pipeline |
 
 The simulation is remembered per project.
+
+To compare with a pipeline on GitLab, turn off *Show skipped jobs*: GitLab shows only the jobs that are part of
+the pipeline.
 
 ### Updates
 
