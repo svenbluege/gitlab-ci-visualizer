@@ -1,0 +1,55 @@
+name: Release
+
+# Every push to main publishes a release with the plugin zip and an updatePlugins.xml.
+# Installed plugins point the IDE at the latest updatePlugins.xml, which is how they find new versions.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# One release at a time, so that "latest" is always the newest commit.
+concurrency:
+  group: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v6
+
+      # Major and minor come from gradle.properties, the run number makes every release newer than the last.
+      - name: Set the version
+        run: |
+          base=$(grep '^pluginVersion=' gradle.properties | cut -d= -f2 | cut -d. -f1,2)
+          echo "VERSION=$base.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Test and build
+        run: ./gradlew test buildPlugin -PpluginVersion="$VERSION"
+
+      - name: Describe the release for the IDE's update check
+        run: |
+          since=$(grep -o 'since-build="[^"]*"' build/tmp/patchPluginXml/plugin.xml)
+          cat > updatePlugins.xml <<EOF
+          <plugins>
+            <plugin id="io.github.svenbluege.gitlab-ci-visualizer" version="$VERSION"
+                    url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/v$VERSION/gitlab-ci-visualizer-$VERSION.zip">
+              <idea-version $since/>
+              <name>GitLab CI Visualizer</name>
+            </plugin>
+          </plugins>
+          EOF
+          cat updatePlugins.xml
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "v$VERSION" "build/distributions/gitlab-ci-visualizer-$VERSION.zip" updatePlugins.xml
+          --title "$VERSION" --generate-notes

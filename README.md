@@ -21,33 +21,18 @@ simulate which jobs run.
 
 ## Installation
 
-The plugin is not on the JetBrains Marketplace. You build one zip file and install it from disk.
+The plugin is not on the JetBrains Marketplace. You download one zip file and install it from disk. After that
+the IDE finds new versions by itself.
 
 ### Requirements
 
 - A JetBrains IDE **2026.2 or newer**. It is built and tested with WebStorm 2026.2.1.
 - The bundled plugin **Web Browser (JCEF)** must be enabled, which it is by default.
-- For building: JDK 25. The IDE brings one along in `<IDE install directory>/jbr`.
 
-### 1. Build the plugin file
+### 1. Download the plugin file
 
-    git clone https://github.com/svenbluege/gitlab-ci-visualizer.git
-    cd gitlab-ci-visualizer
-
-Windows (PowerShell), using the installed WebStorm as JDK and as the IDE to build against:
-
-    $env:JAVA_HOME = "$env:LOCALAPPDATA\Programs\WebStorm\jbr"
-    .\gradlew.bat buildPlugin "-PlocalIdePath=$env:LOCALAPPDATA\Programs\WebStorm"
-
-macOS and Linux:
-
-    export JAVA_HOME="<IDE install directory>/jbr"
-    ./gradlew buildPlugin -PlocalIdePath="<IDE install directory>"
-
-The result is `build/distributions/gitlab-ci-visualizer-<version>.zip`. Do not unpack it.
-
-Without `-PlocalIdePath` the build downloads WebStorm (about 1 GB). Behind a proxy, put
-`systemProp.https.proxyHost` and `systemProp.https.proxyPort` into `~/.gradle/gradle.properties`.
+Download `gitlab-ci-visualizer-<version>.zip` from the
+[latest release](https://github.com/svenbluege/gitlab-ci-visualizer/releases/latest). Do not unpack it.
 
 ### 2. Install it in the IDE
 
@@ -73,10 +58,18 @@ both, and pipeline only.
 
 The simulation is remembered per project.
 
-### Update and uninstall
+### Updates
 
-To update, build the new zip and install it the same way; it replaces the old version. To remove the plugin, open
-**Settings → Plugins → Installed**, select *GitLab CI Visualizer* and choose **Uninstall**.
+Every push to the `main` branch publishes a new release. The plugin tells the IDE where the releases are, so the
+IDE's regular plugin update check offers the new version like any other plugin update. To check right away, use
+**Help → Check for Updates…** (on macOS it is in the application menu).
+
+If automatic checks are switched off under **Settings → Appearance & Behavior → System Settings → Updates**, or
+the IDE cannot reach github.com, download the newer zip and install it the same way; it replaces the old version.
+
+### Uninstall
+
+Open **Settings → Plugins → Installed**, select *GitLab CI Visualizer* and choose **Uninstall**.
 
 ### If something does not work
 
@@ -99,8 +92,24 @@ Not evaluated:
 
 ## Development
 
-    ./gradlew test      # unit tests, plus two tests that start a headless IDE
-    ./gradlew runIde    # a sandbox IDE with the plugin
+The build needs JDK 25. The IDE brings one along in `<IDE install directory>/jbr`.
+
+    ./gradlew test          # unit tests, plus tests that start a headless IDE
+    ./gradlew buildPlugin   # build/distributions/gitlab-ci-visualizer-<version>.zip
+    ./gradlew runIde        # a sandbox IDE with the plugin
+
+The build downloads WebStorm (about 1 GB) unless you point it at an installed IDE. On Windows (PowerShell), using
+the installed WebStorm as JDK and as the IDE to build against:
+
+    $env:JAVA_HOME = "$env:LOCALAPPDATA\Programs\WebStorm\jbr"
+    .\gradlew.bat buildPlugin "-PlocalIdePath=$env:LOCALAPPDATA\Programs\WebStorm"
+
+Behind a proxy, put `systemProp.https.proxyHost` and `systemProp.https.proxyPort` into
+`~/.gradle/gradle.properties`.
+
+Releases are built by `.github/workflows/release.yml`. The version is `major.minor` from `gradle.properties` plus
+the number of the workflow run, so every release is newer than the one before. The workflow also publishes
+`updatePlugins.xml`, the file the installed plugins point the IDE to.
 
 To render a file without an IDE, as `build/pipeline.html`:
 

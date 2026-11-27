@@ -6,7 +6,8 @@ plugins {
 }
 
 group = "io.github.svenbluege"
-version = "0.2.0"
+// The release workflow passes -PpluginVersion with the run number as the last part.
+version = providers.gradleProperty("pluginVersion").get()
 
 // IntelliJ Platform 2026.2 is compiled for Java 25.
 kotlin { jvmToolchain(25) }

@@ -1,5 +1,6 @@
 package io.github.svenbluege.gitlabci
 
+import com.intellij.ide.plugins.RepositoryHelper
 import com.intellij.openapi.fileEditor.FileEditorPolicy
 import com.intellij.openapi.fileEditor.TextEditorWithPreview
 import com.intellij.openapi.fileEditor.ex.FileEditorProviderManager
@@ -7,7 +8,7 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
-/** Starts a headless IDE with the plugin: checks the registration in plugin.xml and that the editor can be built. */
+/** Starts a headless IDE with the plugin: checks the registrations in plugin.xml and that the editor can be built. */
 class PipelineEditorTest : BasePlatformTestCase() {
     private fun providers(name: String) = FileEditorProviderManager.getInstance()
         .getProviderList(project, myFixture.addFileToProject(name, "job: { script: x }").virtualFile)
@@ -25,6 +26,11 @@ class PipelineEditorTest : BasePlatformTestCase() {
         assertEquals("Pipeline", editor.previewEditor.name)
         assertTrue(editor.previewEditor.isValid)
         PlatformTestUtil.dispatchAllEventsInIdeEventQueue() // the split editor finishes its setup asynchronously
+    }
+
+    fun `test the IDE looks for updates in the releases`() {
+        assertTrue(UPDATE_URL in RepositoryHelper.getCustomPluginRepositoryHosts())
+        assertTrue(UPDATE_URL.startsWith("https://github.com/svenbluege/gitlab-ci-visualizer/releases/latest/download/"))
     }
 
     fun `test other yaml files keep their editor`() {
