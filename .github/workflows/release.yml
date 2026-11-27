@@ -1,6 +1,7 @@
 name: Release
 
 # Every push to main publishes a release with the plugin zip and an updatePlugins.xml.
+# Merging a pull request is such a push, so merged pull requests are released the same way.
 # Installed plugins point the IDE at the latest updatePlugins.xml, which is how they find new versions.
 on:
   push:

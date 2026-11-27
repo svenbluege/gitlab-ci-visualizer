@@ -151,3 +151,8 @@ To render a file without an IDE, as `build/pipeline.html`:
 
 `GITLAB_CI_OUT`, `GITLAB_CI_BRANCH` and `GITLAB_CI_THEME=light` change the output file, the simulated branch
 and the theme.
+
+## License
+
+[MIT](LICENSE). The plugin file also contains [SnakeYAML](https://bitbucket.org/snakeyaml/snakeyaml), which is
+licensed under the Apache License 2.0.
